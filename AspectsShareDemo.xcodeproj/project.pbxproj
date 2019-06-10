@@ -7,6 +7,8 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		AC29D63D22AE995E00DECC47 /* AAAViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = AC29D63C22AE995E00DECC47 /* AAAViewController.m */; };
+		AC7CCDEC22AE9BF600A1BF1C /* UIViewController+Swizzling.m in Sources */ = {isa = PBXBuildFile; fileRef = AC7CCDEB22AE9BF600A1BF1C /* UIViewController+Swizzling.m */; };
 		B69B22A222A7EFF20023F574 /* AppDelegate.m in Sources */ = {isa = PBXBuildFile; fileRef = B69B22A122A7EFF20023F574 /* AppDelegate.m */; };
 		B69B22A522A7EFF20023F574 /* ViewController.m in Sources */ = {isa = PBXBuildFile; fileRef = B69B22A422A7EFF20023F574 /* ViewController.m */; };
 		B69B22A822A7EFF20023F574 /* Main.storyboard in Resources */ = {isa = PBXBuildFile; fileRef = B69B22A622A7EFF20023F574 /* Main.storyboard */; };
@@ -36,6 +38,10 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		AC29D63B22AE995E00DECC47 /* AAAViewController.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AAAViewController.h; sourceTree = "<group>"; };
+		AC29D63C22AE995E00DECC47 /* AAAViewController.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AAAViewController.m; sourceTree = "<group>"; };
+		AC7CCDEA22AE9BF600A1BF1C /* UIViewController+Swizzling.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = "UIViewController+Swizzling.h"; sourceTree = "<group>"; };
+		AC7CCDEB22AE9BF600A1BF1C /* UIViewController+Swizzling.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = "UIViewController+Swizzling.m"; sourceTree = "<group>"; };
 		B69B229D22A7EFF20023F574 /* AspectsShareDemo.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = AspectsShareDemo.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		B69B22A022A7EFF20023F574 /* AppDelegate.h */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.h; path = AppDelegate.h; sourceTree = "<group>"; };
 		B69B22A122A7EFF20023F574 /* AppDelegate.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; path = AppDelegate.m; sourceTree = "<group>"; };
@@ -107,8 +113,12 @@
 				B69B22D222A7F0370023F574 /* Aspects */,
 				B69B22A022A7EFF20023F574 /* AppDelegate.h */,
 				B69B22A122A7EFF20023F574 /* AppDelegate.m */,
+				AC7CCDEA22AE9BF600A1BF1C /* UIViewController+Swizzling.h */,
+				AC7CCDEB22AE9BF600A1BF1C /* UIViewController+Swizzling.m */,
 				B69B22A322A7EFF20023F574 /* ViewController.h */,
 				B69B22A422A7EFF20023F574 /* ViewController.m */,
+				AC29D63B22AE995E00DECC47 /* AAAViewController.h */,
+				AC29D63C22AE995E00DECC47 /* AAAViewController.m */,
 				B69B22A622A7EFF20023F574 /* Main.storyboard */,
 				B69B22A922A7EFF50023F574 /* Assets.xcassets */,
 				B69B22AB22A7EFF50023F574 /* LaunchScreen.storyboard */,
@@ -277,6 +287,8 @@
 			files = (
 				B69B22A522A7EFF20023F574 /* ViewController.m in Sources */,
 				B69B22B022A7EFF50023F574 /* main.m in Sources */,
+				AC7CCDEC22AE9BF600A1BF1C /* UIViewController+Swizzling.m in Sources */,
+				AC29D63D22AE995E00DECC47 /* AAAViewController.m in Sources */,
 				B69B22A222A7EFF20023F574 /* AppDelegate.m in Sources */,
 				B69B22D822A7F05C0023F574 /* Aspects.m in Sources */,
 			);

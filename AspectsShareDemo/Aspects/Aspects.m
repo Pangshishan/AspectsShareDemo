@@ -37,6 +37,7 @@ typedef struct _AspectBlock {
 	// imported variables
 } *AspectBlockRef;
 
+// 对 NSInvocation的封装，描述
 @interface AspectInfo : NSObject <AspectInfo>
 - (id)initWithInstance:(__unsafe_unretained id)instance invocation:(NSInvocation *)invocation;
 @property (nonatomic, unsafe_unretained, readonly) id instance;
@@ -44,6 +45,7 @@ typedef struct _AspectBlock {
 @property (nonatomic, strong, readonly) NSInvocation *originalInvocation;
 @end
 
+// 保存的是切片信息
 // Tracks a single aspect.
 @interface AspectIdentifier : NSObject
 + (instancetype)identifierWithSelector:(SEL)selector object:(id)object options:(AspectOptions)options block:(id)block error:(NSError **)error;
@@ -55,6 +57,7 @@ typedef struct _AspectBlock {
 @property (nonatomic, assign) AspectOptions options;
 @end
 
+// 每一个selector 对应一个 AspectsContainer
 // Tracks all aspects for an object/class.
 @interface AspectsContainer : NSObject
 - (void)addAspect:(AspectIdentifier *)aspect withOptions:(AspectOptions)injectPosition;
@@ -123,9 +126,11 @@ static id aspect_add(id self, SEL selector, AspectOptions options, id block, NSE
     __block AspectIdentifier *identifier = nil;
     aspect_performLocked(^{
         if (aspect_isSelectorAllowedAndTrack(self, selector, options, error)) {
+            // 取到aspects_selector 对应的 Container
             AspectsContainer *aspectContainer = aspect_getContainerForObject(self, selector);
             identifier = [AspectIdentifier identifierWithSelector:selector object:self options:options block:block error:error];
             if (identifier) {
+                // 将切片信息，添加到对应的容器里
                 [aspectContainer addAspect:identifier withOptions:options];
 
                 // Modify the class to allow message interception.
@@ -171,6 +176,7 @@ static SEL aspect_aliasForSelector(SEL selector) {
 	return NSSelectorFromString([AspectsMessagePrefix stringByAppendingFormat:@"_%@", NSStringFromSelector(selector)]);
 }
 
+// 生成 block（切片）的方法签名
 static NSMethodSignature *aspect_blockMethodSignature(id block, NSError **error) {
     AspectBlockRef layout = (__bridge void *)block;
 	if (!(layout->flags & AspectBlockFlagsHasSignature)) {
@@ -192,25 +198,30 @@ static NSMethodSignature *aspect_blockMethodSignature(id block, NSError **error)
 	return [NSMethodSignature signatureWithObjCTypes:signature];
 }
 
+/// block 的方法签名参数 和 selector（要hook的方法）方法签名的参数，是否匹配
 static BOOL aspect_isCompatibleBlockSignature(NSMethodSignature *blockSignature, id object, SEL selector, NSError **error) {
     NSCParameterAssert(blockSignature);
     NSCParameterAssert(object);
     NSCParameterAssert(selector);
 
     BOOL signaturesMatch = YES;
+    // 拿到selector的方法签名
     NSMethodSignature *methodSignature = [[object class] instanceMethodSignatureForSelector:selector];
     if (blockSignature.numberOfArguments > methodSignature.numberOfArguments) {
-        signaturesMatch = NO;
+        // PS: selector 默认带两个参数 self 和 SEL，Block默认带一个参数@? , 即block本身，Aspects又加了一个AspectInfo参数
+        signaturesMatch = NO; // block参数，只能少，不能多
     }else {
         if (blockSignature.numberOfArguments > 1) {
-            const char *blockType = [blockSignature getArgumentTypeAtIndex:1];
+            const char *blockType = [blockSignature getArgumentTypeAtIndex:1]; // // "@\"<AspectInfo>\""
             if (blockType[0] != '@') {
+                // 如果block里第一个参数，不是AspectInfo，说明不匹配
                 signaturesMatch = NO;
             }
         }
         // Argument 0 is self/block, argument 1 is SEL or id<AspectInfo>. We start comparing at argument 2.
         // The block can have less arguments than the method, that's ok.
         if (signaturesMatch) {
+            // 从第二个参数开始比较，如果类型不匹配，不行。PS：block参数个数除去第一个AspectInfo外，一定要小于等于selector参数
             for (NSUInteger idx = 2; idx < blockSignature.numberOfArguments; idx++) {
                 const char *methodType = [methodSignature getArgumentTypeAtIndex:idx];
                 const char *blockType = [blockSignature getArgumentTypeAtIndex:idx];
@@ -528,6 +539,7 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
 // Loads or creates the aspect container.
 static AspectsContainer *aspect_getContainerForObject(NSObject *self, SEL selector) {
     NSCParameterAssert(self);
+    // selector 前添加 aspects_ 前缀 如: aspects_viewWillAppear
     SEL aliasSelector = aspect_aliasForSelector(selector);
     AspectsContainer *aspectContainer = objc_getAssociatedObject(self, aliasSelector);
     if (!aspectContainer) {
@@ -825,12 +837,14 @@ static void aspect_deregisterTrackedSelector(id self, SEL selector) {
 + (instancetype)identifierWithSelector:(SEL)selector object:(id)object options:(AspectOptions)options block:(id)block error:(NSError **)error {
     NSCParameterAssert(block);
     NSCParameterAssert(selector);
+    // 得到 block（切片）的方法签名
     NSMethodSignature *blockSignature = aspect_blockMethodSignature(block, error); // TODO: check signature compatibility, etc.
+    // 看block和selector是否匹配
     if (!aspect_isCompatibleBlockSignature(blockSignature, object, selector, error)) {
         return nil;
     }
-
     AspectIdentifier *identifier = nil;
+    // 如果block的方法签名没有获取到，也无法hook
     if (blockSignature) {
         identifier = [AspectIdentifier new];
         identifier.selector = selector;
