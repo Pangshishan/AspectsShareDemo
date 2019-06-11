@@ -57,7 +57,7 @@ typedef struct _AspectBlock {
 @property (nonatomic, assign) AspectOptions options;
 @end
 
-// 每一个target-selector 对应一个 AspectsContainer，里面保存的是AspectIdentifier
+// 每一个self-selector 对应一个 AspectsContainer，里面保存的是AspectIdentifier 切片信息
 // Tracks all aspects for an object/class.
 @interface AspectsContainer : NSObject
 - (void)addAspect:(AspectIdentifier *)aspect withOptions:(AspectOptions)injectPosition;
@@ -252,19 +252,31 @@ static BOOL aspect_isMsgForwardIMP(IMP impl) {
     ;
 }
 
+/*
+ 返回IMP方法实现，_objc_msgForward 或 _objc_msgForward_stret
+ 参考：https://blog.csdn.net/weixin_34375233/article/details/87974740
+ */
 static IMP aspect_getMsgForwardIMP(NSObject *self, SEL selector) {
     IMP msgForwardIMP = _objc_msgForward;
-#if !defined(__arm64__)
+#if !defined(__arm64__) // 非arm64系统，才会走里面
     // As an ugly internal runtime implementation detail in the 32bit runtime, we need to determine of the method we hook returns a struct or anything larger than id.
     // https://developer.apple.com/library/mac/documentation/DeveloperTools/Conceptual/LowLevelABI/000-Introduction/introduction.html
     // https://github.com/ReactiveCocoa/ReactiveCocoa/issues/783
     // http://infocenter.arm.com/help/topic/com.arm.doc.ihi0042e/IHI0042E_aapcs.pdf (Section 5.4)
+    
     Method method = class_getInstanceMethod(self.class, selector);
     const char *encoding = method_getTypeEncoding(method);
     BOOL methodReturnsStructValue = encoding[0] == _C_STRUCT_B;
     if (methodReturnsStructValue) {
+        /*
+         typeEncoding 第0个字符是 '{' , 说明返回值是结构体类型
+         type encodings 详解：https://juejin.im/post/5afb9f1e518825672f1a0b48
+         结构体字节对齐：https://www.cnblogs.com/clover-toeic/p/3853132.html
+         */
+        
         @try {
             NSUInteger valueSize = 0;
+            // 获取编码类型的 实际大小 和 对齐的大小。第二个参数没传，valueSize就是实际大小
             NSGetSizeAndAlignment(encoding, &valueSize, NULL);
 
             if (valueSize == 1 || valueSize == 2 || valueSize == 4 || valueSize == 8) {
@@ -279,16 +291,26 @@ static IMP aspect_getMsgForwardIMP(NSObject *self, SEL selector) {
     return msgForwardIMP;
 }
 
+/*
+ 1. aspects__selector -> IMP targetMethodIMP
+ 2. selector          -> IMP _objc_msgForward的IMP
+ */
 static void aspect_prepareClassAndHookSelector(NSObject *self, SEL selector, NSError **error) {
     NSCParameterAssert(selector);
     Class klass = aspect_hookClass(self, error);
     Method targetMethod = class_getInstanceMethod(klass, selector);
     IMP targetMethodIMP = method_getImplementation(targetMethod);
     if (!aspect_isMsgForwardIMP(targetMethodIMP)) {
+        /*
+            targetMethodIMP 不是 _objc_msgForward 时，进入
+            如果 targetMethodIMP 是 _objc_msgForward，说明已经交换过IMP实现了，不需要进来
+         */
+        
         // Make a method alias for the existing method implementation, it not already copied.
-        const char *typeEncoding = method_getTypeEncoding(targetMethod);
+        const char *typeEncoding = method_getTypeEncoding(targetMethod); // "v20@0:8B16"
         SEL aliasSelector = aspect_aliasForSelector(selector);
         if (![klass instancesRespondToSelector:aliasSelector]) {
+            // 走这里说明：klass 未添加 aliasSelector 方法，填上方法实现
             __unused BOOL addedAlias = class_addMethod(klass, aliasSelector, method_getImplementation(targetMethod), typeEncoding);
             NSCAssert(addedAlias, @"Original implementation for %@ is already copied to %@ on %@", NSStringFromSelector(selector), NSStringFromSelector(aliasSelector), klass);
         }
@@ -358,7 +380,12 @@ static void aspect_cleanupHookedClassAndSelector(NSObject *self, SEL selector) {
 
 ///////////////////////////////////////////////////////////////////////////////////////////
 #pragma mark - Hook Class
-
+/*
+ 拿到要hook的类，且 hook 返回类的 forwardInvocation。PS：只hook一次
+ 1. 如果是类对象，返回 类对象本身
+ 2. 如果是KVO对象，返回 系统自动生成的子类 （NSKVONotifying_XXX）
+ 3. 如果是普通实例对象，Aspects动态创建一个子类（XXX_Aspects_），将对象isa指针指向子类，并返回这个类
+ */
 static Class aspect_hookClass(NSObject *self, NSError **error) {
     NSCParameterAssert(self);
 	Class statedClass = self.class; // 如果是类对象，返回类本身
@@ -367,12 +394,12 @@ static Class aspect_hookClass(NSObject *self, NSError **error) {
 
     // Already subclassed   _Aspects_
 	if ([className hasSuffix:AspectsSubclassSuffix]) {
-        // 如果baseClass 是 Aspects动态生成的类，直接返回
+        // self是普通实例对象，且hook过
 		return baseClass;
 
         // We swizzle a class object, not a single object.
 	}else if (class_isMetaClass(baseClass)) {
-        // 如果baseClass 是元类，说明self是类对象
+        // self是类对象
         return aspect_swizzleClassInPlace((Class)self);
         // Probably a KVO'ed class. Swizzle in place. Also swizzle meta classes in place.
     }else if (statedClass != baseClass) {
@@ -498,11 +525,14 @@ static void __ASPECTS_ARE_BEING_CALLED__(__unsafe_unretained NSObject *self, SEL
     NSCParameterAssert(self);
     NSCParameterAssert(invocation);
     SEL originalSelector = invocation.selector;
+    // aliasSelector 对应的IMP，是原方法实现
 	SEL aliasSelector = aspect_aliasForSelector(invocation.selector);
     invocation.selector = aliasSelector;
     AspectsContainer *objectContainer = objc_getAssociatedObject(self, aliasSelector);
     AspectsContainer *classContainer = aspect_getContainerForClass(object_getClass(self), aliasSelector);
     AspectInfo *info = [[AspectInfo alloc] initWithInstance:self invocation:invocation];
+    
+    // 保存 执行完就移除的切片们
     NSArray *aspectsToRemove = nil;
 
     // Before hooks.
@@ -867,6 +897,7 @@ static void aspect_deregisterTrackedSelector(id self, SEL selector) {
     return identifier;
 }
 
+// 执行切片，将info当成block切片的首个参数
 - (BOOL)invokeWithInfo:(id<AspectInfo>)info {
     NSInvocation *blockInvocation = [NSInvocation invocationWithMethodSignature:self.blockSignature];
     NSInvocation *originalInvocation = info.originalInvocation;

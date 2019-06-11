@@ -8,6 +8,7 @@
 
 #import "ViewController.h"
 #import "AAAViewController.h"
+#import "Aspects/Aspects.h"
 
 @interface ViewController ()
 
@@ -28,6 +29,12 @@
 - (void)touchesBegan:(NSSet<UITouch *> *)touches withEvent:(UIEvent *)event {
     AAAViewController *vc = [[AAAViewController alloc] init];
     [self presentViewController:vc animated:YES completion:nil];
+    
+    
+//    [vc addObserver:self forKeyPath:@"title" options:NSKeyValueObservingOptionNew context:nil];
+    [vc aspect_hookSelector:@selector(viewWillAppear:) withOptions:AspectPositionBefore usingBlock:^(id<AspectInfo> info){
+        NSLog(@"AAAViewController - viewWillAppear  实例对象hook");
+    } error:nil];
 }
 
 - (void)setupUI {
