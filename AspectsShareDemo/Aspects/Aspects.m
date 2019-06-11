@@ -37,7 +37,7 @@ typedef struct _AspectBlock {
 	// imported variables
 } *AspectBlockRef;
 
-// 对 NSInvocation的封装，描述
+// 对 NSInvocation的封装，描述。也是Aspects通过block给我们的第一个参数
 @interface AspectInfo : NSObject <AspectInfo>
 - (id)initWithInstance:(__unsafe_unretained id)instance invocation:(NSInvocation *)invocation;
 @property (nonatomic, unsafe_unretained, readonly) id instance;
@@ -57,7 +57,7 @@ typedef struct _AspectBlock {
 @property (nonatomic, assign) AspectOptions options;
 @end
 
-// 每一个selector 对应一个 AspectsContainer
+// 每一个target-selector 对应一个 AspectsContainer，里面保存的是AspectIdentifier
 // Tracks all aspects for an object/class.
 @interface AspectsContainer : NSObject
 - (void)addAspect:(AspectIdentifier *)aspect withOptions:(AspectOptions)injectPosition;
@@ -361,22 +361,29 @@ static void aspect_cleanupHookedClassAndSelector(NSObject *self, SEL selector) {
 
 static Class aspect_hookClass(NSObject *self, NSError **error) {
     NSCParameterAssert(self);
-	Class statedClass = self.class;
+	Class statedClass = self.class; // 如果是类对象，返回类本身
 	Class baseClass = object_getClass(self);
 	NSString *className = NSStringFromClass(baseClass);
 
-    // Already subclassed
+    // Already subclassed   _Aspects_
 	if ([className hasSuffix:AspectsSubclassSuffix]) {
+        // 如果baseClass 是 Aspects动态生成的类，直接返回
 		return baseClass;
 
         // We swizzle a class object, not a single object.
 	}else if (class_isMetaClass(baseClass)) {
+        // 如果baseClass 是元类，说明self是类对象
         return aspect_swizzleClassInPlace((Class)self);
         // Probably a KVO'ed class. Swizzle in place. Also swizzle meta classes in place.
     }else if (statedClass != baseClass) {
+        // 当self 是KVO 对象时。PS: KVO动态创建一个子类，然后将self的isa指针指向了KVO子类。所以isa指向的类，和self.class 不相等
         return aspect_swizzleClassInPlace(baseClass);
     }
-
+    
+    /*
+     上面都不满足，说明 hook的 是一个正常实例对象。
+     下面是动态生成了一个子类，并将对象的isa指针，指向生成的类
+     */
     // Default case. Create dynamic subclass.
 	const char *subclassName = [className stringByAppendingString:AspectsSubclassSuffix].UTF8String;
 	Class subclass = objc_getClass(subclassName);
@@ -388,8 +395,9 @@ static Class aspect_hookClass(NSObject *self, NSError **error) {
             AspectError(AspectErrorFailedToAllocateClassPair, errrorDesc);
             return nil;
         }
-
+        // hook 生成的子类的 forwordInvocation
 		aspect_swizzleForwardInvocation(subclass);
+        // 修改subclass的 -(Class)class 方法，返回statedClass
 		aspect_hookedGetClass(subclass, statedClass);
 		aspect_hookedGetClass(object_getClass(subclass), statedClass);
 		objc_registerClassPair(subclass);
@@ -399,6 +407,7 @@ static Class aspect_hookClass(NSObject *self, NSError **error) {
 	return subclass;
 }
 
+// hook 要插入切片类的 forwardInvocation
 static NSString *const AspectsForwardInvocationSelectorName = @"__aspects_forwardInvocation:";
 static void aspect_swizzleForwardInvocation(Class klass) {
     NSCParameterAssert(klass);
@@ -445,12 +454,14 @@ static void _aspect_modifySwizzledClasses(void (^block)(NSMutableSet *swizzledCl
     }
 }
 
+// 只 hook 一次 forwardInvocation
 static Class aspect_swizzleClassInPlace(Class klass) {
     NSCParameterAssert(klass);
     NSString *className = NSStringFromClass(klass);
-
+    // 在block中，提供一个单利集合
     _aspect_modifySwizzledClasses(^(NSMutableSet *swizzledClasses) {
         if (![swizzledClasses containsObject:className]) {
+            // hook 要插入切片类的 forwardInvocation
             aspect_swizzleForwardInvocation(klass);
             [swizzledClasses addObject:className];
         }
@@ -595,7 +606,7 @@ static BOOL aspect_isSelectorAllowedAndTrack(NSObject *self, SEL selector, Aspec
     }
 
     // Additional checks.
-    AspectOptions position = options&AspectPositionFilter; // 过滤掉AspectOptionAutomaticRemoval 留住位置信息
+    AspectOptions position = options&AspectPositionFilter; // 过滤掉AspectOptionAutomaticRemoval 只剩下位置信息
     if ([selectorName isEqualToString:@"dealloc"] && position != AspectPositionBefore) {
         // dealloc 只能在前面插入切片
         NSString *errorDesc = @"AspectPositionBefore is the only valid position when hooking dealloc.";
@@ -914,8 +925,10 @@ static void aspect_deregisterTrackedSelector(id self, SEL selector) {
     return self.beforeAspects.count > 0 || self.insteadAspects.count > 0 || self.afterAspects.count > 0;
 }
 
+// 根据位置信息，将AspectIdentifier切片，放在对应的数组里。
 - (void)addAspect:(AspectIdentifier *)aspect withOptions:(AspectOptions)options {
     NSParameterAssert(aspect);
+    // 过滤掉AspectOptionAutomaticRemoval 只剩下位置信息
     NSUInteger position = options&AspectPositionFilter;
     switch (position) {
         case AspectPositionBefore:  self.beforeAspects  = [(self.beforeAspects ?:@[]) arrayByAddingObject:aspect]; break;
